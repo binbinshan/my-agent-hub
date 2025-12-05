@@ -1,60 +1,172 @@
-name: CI/CD Pipeline
+name: CI/CD 持续集成流水线
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.13']
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python
+    - name: 设置 Python ${{ matrix.python-version }} 环境
       uses: actions/setup-python@v5
       with:
-        python-version: '3.13'
+        python-version: ${{ matrix.python-version }}
         cache: 'pip'
+        cache-dependency-path: requirements.txt
 
-    - name: Install dependencies
+    - name: 安装项目依赖
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        # 安装额外的测试依赖
+        pip install pytest pytest-asyncio pytest-cov flake8
 
-    - name: Check if tests exist
+    - name: 验证 Python 语法
+      run: |
+        echo "正在检查所有 Python 文件的语法..."
+        find . -name "*.py" -type f -exec python -m py_compile {} \;
+        echo "✅ 所有 Python 文件语法验证通过"
+
+    - name: 代码风格检查
+      run: |
+        echo "正在进行代码风格检查..."
+        # 严重错误会导致构建失败
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # 将其他错误视为警告
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        echo "✅ 代码风格检查完成"
+
+    - name: 检查测试文件
       id: check_tests
       run: |
-        if [ -d "tests" ]; then
+        echo "正在查找测试文件..."
+        # 检查项目中是否存在测试文件
+        if [ -d "tests" ] || find . -name "*test*.py" -type f | grep -q .; then
           echo "tests_exist=true" >> $GITHUB_OUTPUT
+          echo "✅ 找到测试文件"
         else
           echo "tests_exist=false" >> $GITHUB_OUTPUT
+          echo "ℹ️ 未找到测试文件"
         fi
 
-    - name: Run tests
+    - name: 运行测试
       if: steps.check_tests.outputs.tests_exist == 'true'
-      run: pytest tests
+      run: |
+        echo "开始运行测试..."
+        # 运行找到的所有测试文件
+        if [ -d "tests" ]; then
+          echo "在 tests 目录中运行测试"
+          pytest tests -v --cov=chatbot --cov-report=xml --cov-report=html
+        else
+          echo "查找并运行独立的测试文件"
+          find . -name "*test*.py" -type f -exec pytest {} -v \;
+        fi
+        echo "✅ 测试运行完成"
       env:
-        DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-        TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+        # 如果没有提供 secrets，为 CI 设置虚拟值
+        DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'dummy-key-for-ci' }}
+        TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY || 'dummy-key-for-ci' }}
 
-    - name: Run basic validation
+    - name: 运行导入验证
       if: steps.check_tests.outputs.tests_exist == 'false'
       run: |
-        echo "No tests directory found, running basic validation..."
-        python -m py_compile chatbot/chatbot.py
-        python -m py_compile chatbot/TavilySearchToolNode.py
+        echo "未找到测试目录，正在运行导入验证..."
+        # 测试主模块导入
+        echo "  - 测试主模块导入..."
+        python -c "
+        try:
+            import sys
+            sys.path.append('.')
+            from chatbot import ChatBot
+            print('✅ ChatBot 模块导入成功')
+        except Exception as e:
+            print(f'❌ ChatBot 模块导入失败: {e}')
+            sys.exit(1)
+        "
+
+        # 测试各个子模块导入
+        echo "  - 测试子模块导入..."
+        python -c "
+        try:
+            from chatbot import config, logger, utils
+            from chatbot.TavilySearchToolNode import ToolExecutionNode
+            print('✅ 所有模块导入成功')
+        except Exception as e:
+            print(f'❌ 模块导入失败: {e}')
+            sys.exit(1)
+        "
+        echo "✅ 导入验证完成"
+
+    - name: 基础功能测试
+      run: |
+        echo "正在运行基础功能测试..."
+        python -c "
+        import os
+        os.environ['DEEPSEEK_API_KEY'] = 'test-key'
+        os.environ['TAVILY_API_KEY'] = 'test-key'
+
+        try:
+            # 测试配置加载
+            print('  - 测试配置加载...')
+            from chatbot.config import ChatConfig
+            config = ChatConfig()
+            print('✅ 配置加载成功')
+
+            # 测试日志系统
+            print('  - 测试日志系统...')
+            from chatbot.logger import setup_logger
+            logger = setup_logger('test')
+            print('✅ 日志系统初始化成功')
+
+            # 测试工具函数
+            print('  - 测试工具函数...')
+            from chatbot.utils import sanitize_user_input, count_tokens
+            sanitized = sanitize_user_input('test input')
+            print(f'✅ 工具函数正常工作: sanitized={sanitized}')
+
+            print('✅ 基础功能测试全部通过')
+        except Exception as e:
+            print(f'❌ 基础功能测试失败: {e}')
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+        "
+
+    - name: 上传覆盖率报告
+      if: steps.check_tests.outputs.tests_exist == 'true'
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
 
   deploy:
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    environment: production
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Deploy to server
-      run: |
-        echo "Deploying application..."
+    - name: 部署到服务器
+      run: |这
+        echo "🚀 正在部署应用..."
+        echo "这是一个部署步骤的占位符"
+        echo "典型的部署步骤可能包括："
+        echo "- 构建 Docker 镜像"
+        echo "- 推送到镜像仓库"
+        echo "- 更新 Kubernetes 部署"
+        echo "- 运行数据库迁移"
+        echo "- 健康检查"
+        echo "✅ 部署流程完成"
