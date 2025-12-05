@@ -152,7 +152,7 @@ def test_direct_summary_generation():
             HumanMessage(content="我应该从哪里开始？"),
             AIMessage(content="建议从基础语法开始，然后练习简单的项目。"),
             HumanMessage(content="有什么好的学习资源吗？"),
-            AIMessage(content("推荐官方文档、在线教程和实战项目。"))
+            AIMessage(content= "推荐官方文档、在线教程和实战项目。")
         ]
 
         summary = generator.generate_summary(messages, "direct_test")
