@@ -160,7 +160,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: 部署到服务器
-      run: |这
+      run: |
         echo "🚀 正在部署应用..."
         echo "这是一个部署步骤的占位符"
         echo "典型的部署步骤可能包括："
