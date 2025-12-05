@@ -3,3 +3,4 @@ langchain_openai==1.1.0
 langgraph==1.0.4
 langchain_community==0.4.1
 langchain-tavily==0.2.13
+socksio

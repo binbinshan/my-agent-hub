@@ -1,24 +1,162 @@
-一个基于大模型的聊天代理框架，支持：
-- 大模型返回流式输出（streaming）以降低延迟并实时呈现响应。
-- 会话记忆功能（持久/短期记忆）以提升对话连贯性和上下文保持。
+# 💬 ChatBot - 智能对话机器人
 
-## 主要特性
-- 流式响应：模型生成的回复以数据块方式逐步输出，便于前端实时渲染。
-- 记忆管理：支持会话记忆的读取、写入与清理策略，便于长期任务保持上下文。
-- 可扩展工具节点：项目中包含工具节点示例（如 `TavilySearchToolNode.py`）。
-- 单元测试与 CI：自带测试目录，GitHub Actions 已配置为在推送与 PR 时运行测试。
+基于 LangGraph 构建的智能对话系统，支持工具调用、记忆管理和对话摘要。
 
-## 目录结构（重点）
-- `chatbot/`
-  - `chatbot.py` — 主入口，包含聊天逻辑、流式输出与记忆调用点
-  - `TavilySearchToolNode.py` — 工具节点
-  - `__pycache__/` — 字节码缓存
-- `tests/` — 测试用例（若存在）
-- `.github/workflows/ci.yml` — CI 配置（使用 Python 3.13，运行 pytest）
+## 🌟 特性
 
-## 环境与依赖
-- 要求：Python 3.13（CI 使用同版本）
-- 在 macOS 上开发与在 PyCharm 中运行均已验证。
-- 安装依赖：
-  ```bash
-  pip install -r requirements.txt
+- **🔍 实时搜索**：集成 Tavily 搜索引擎，获取最新信息
+- **💾 对话记忆**：持久化保存对话历史，支持多线程管理
+- **📝 智能摘要**：自动生成和管理对话摘要
+- **🔧 工具扩展**：灵活的工具系统，易于添加新功能
+- **🌊 流式输出**：实时显示回答生成过程
+- **🎯 智能路由**：自动判断是否需要调用工具
+
+## 📦 组件结构
+
+```
+chatbot/
+├── __init__.py              # 包初始化
+├── chatbot.py               # 🎯 核心对话逻辑
+├── TavilySearchToolNode.py  # 🔧 工具执行节点
+├── config.py                # ⚙️ 配置管理
+├── logger.py                # 📝 日志系统
+├── utils.py                 # 🛠️ 通用工具函数
+└── summary.py               # 📄 对话摘要功能
+```
+
+## 🚀 使用方法
+
+### 基础对话
+
+```python
+from chatbot import ChatBot
+
+# 初始化机器人
+bot = ChatBot()
+
+# 发送消息
+result = bot.chat("你好，今天北京天气怎么样？")
+print(result['response'])
+```
+
+### 流式对话
+
+```python
+# 流式获取响应
+for chunk in bot.stream_chat("讲个笑话"):
+    print(chunk, end='', flush=True)
+```
+
+### 管理对话线程
+
+```python
+# 使用特定线程ID保持对话连续性
+result = bot.chat("继续刚才的话题", thread_id="user_123")
+
+# 获取对话历史
+history = bot.get_conversation_history(thread_id="user_123")
+
+# 清除某个线程的历史
+bot.clear_thread(thread_id="user_123")
+```
+
+## ⚙️ 配置选项
+
+通过环境变量或 `ChatConfig` 类进行配置：
+
+| 配置项 | 环境变量 | 默认值 | 说明 |
+|--------|----------|--------|------|
+| 模型名称 | `MODEL_NAME` | `deepseek-chat` | 使用的语言模型 |
+| API 地址 | `BASE_URL` | `https://api.deepseek.com` | 模型 API 地址 |
+| 最大令牌 | `MAX_TOKENS` | `4000` | 响应最大长度 |
+| 温度系数 | `TEMPERATURE` | `0.7` | 生成随机性（0-1） |
+| 搜索结果数 | `MAX_SEARCH_RESULTS` | `5` | 每次搜索返回结果数 |
+| 默认线程ID | `DEFAULT_THREAD_ID` | `default` | 默认对话线程ID |
+
+## 📋 API 参考
+
+### ChatBot 类
+
+#### 主要方法
+
+- `chat(message, thread_id=None)` - 发送消息并获取回复
+- `stream_chat(message, thread_id=None)` - 流式对话
+- `get_conversation_history(thread_id=None)` - 获取对话历史
+- `clear_thread(thread_id=None)` - 清除对话历史
+- `generate_summary(thread_id=None)` - 生成对话摘要
+- `get_summary(thread_id=None)` - 获取对话摘要
+
+#### 工具相关
+
+- `save_graph_diagram(filepath="graph_diagram.png")` - 保存工作流图
+
+## 🔧 扩展开发
+
+### 添加新工具
+
+1. 在 `chatbot.py` 的 `_setup_tools` 方法中添加：
+
+```python
+from your_tool import YourTool
+
+def _setup_tools(self):
+    # ... 现有工具 ...
+
+    # 添加新工具
+    your_tool = YourTool()
+    self.tools.append(your_tool)
+    logger.info("添加了新工具：YourTool")
+```
+
+2. 工具会自动绑定到模型并可用。
+
+### 自定义消息处理
+
+继承 `ChatBot` 类并重写相应方法：
+
+```python
+class CustomChatBot(ChatBot):
+    def _chatbot_node(self, state):
+        # 自定义消息处理逻辑
+        return super()._chatbot_node(state)
+```
+
+## 🐛 故障排除
+
+### 常见问题
+
+1. **工具调用失败**
+   - 检查 `TAVILY_API_KEY` 是否设置
+   - 确认网络连接正常
+
+2. **模型响应错误**
+   - 验证 `DEEPSEEK_API_KEY` 有效性
+   - 检查 API 访问限制
+
+3. **内存使用过高**
+   - 调整 `MAX_HISTORY_TOKENS` 配置
+   - 定期清理不需要的对话线程
+
+## 📊 日志说明
+
+日志级别可通过 `LOG_LEVEL` 环境变量设置：
+
+- `DEBUG` - 详细调试信息
+- `INFO` - 常规运行信息（默认）
+- `WARNING` - 警告信息
+- `ERROR` - 错误信息
+
+示例日志：
+
+```
+2025-12-05 14:15:23 - chatbot - INFO - 工具执行节点初始化完成，共加载 1 个工具
+2025-12-05 14:15:27 - chatbot - INFO - 开始执行 1 个工具调用
+2025-12-05 14:15:29 - chatbot - INFO - 工具执行完成：成功 1 个，失败 0 个
+```
+
+## 🔗 相关链接
+
+- [返回项目主页](../README.md)
+- [LangGraph 文档](https://python.langchain.com/docs/langgraph)
+- [DeepSeek API 文档](https://platform.deepseek.com/)
+- [Tavily API 文档](https://tavily.com/docs)
